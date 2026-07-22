@@ -3,7 +3,6 @@ const CONFIG = {
   SECRET_TOKEN: 'bimantaramitrapersadakediri',
  KANTOR: { 
   lat: -7.78741542408522,
-  lng: 112.0201064024613
-},
+  lng: 112.0201064024613},
   RADIUS_MAX: 100
 };
