@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ABSENSI BIMANTARA KEDIRI</title>
+  <title>ABSENSI JNT KEDIRI</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { 
@@ -73,7 +73,7 @@
 </head>
 <body>
   <div class="box">
-    <h1>ABSENSI BIMANTARA KEDIRI </h1>
+    <h1>ABSENSI JNT KEDIRI</h1>
     <p class="sub">Sistem Absensi Pekerja J&T Cargo</p>
     
     <!-- STEP 1: NIK/HP -->
@@ -108,39 +108,39 @@
       <button class="btn btn-gray" onclick="reset()">← KEMBALI</button>
     </div>
     
-    <!-- STEP 3: ABSEN MASUK (DENGAN FOTO - SEMUA SHIFT) -->
+    <!-- STEP 3A: ABSEN MASUK (DENGAN FOTO) -->
     <div id="stepMasuk" class="hidden">
       <div class="info">
         <div class="nama" id="dispNama2">-</div>
         <div class="nik" id="dispShift">-</div>
       </div>
-      <div id="fotoSection">
-        <div class="video-box">
-          <video id="video" autoplay playsinline></video>
-          <img id="preview" class="preview hidden">
-        </div>
-        <button id="btnCapture" class="btn btn-primary" onclick="ambilFoto()">📷 AMBIL FOTO</button>
+      <div class="video-box">
+        <video id="video" autoplay playsinline></video>
+        <img id="preview" class="preview hidden">
       </div>
+      <button id="btnCapture" class="btn btn-primary" onclick="ambilFotoMasuk()">📷 AMBIL FOTO</button>
       <div class="info-box" id="info2"></div>
-      <button id="btnMasuk" class="btn btn-masuk" onclick="prosesAbsen('masuk')" disabled>✅ ABSEN MASUK</button>
+      <button id="btnMasuk" class="btn btn-masuk" onclick="prosesAbsenMasuk()" disabled>✅ ABSEN MASUK</button>
       <button class="btn btn-gray" onclick="reset()">← KEMBALI</button>
     </div>
     
-    <!-- STEP 3: ABSEN PULANG (TANPA FOTO) -->
+    <!-- STEP 3B: ABSEN PULANG (DENGAN FOTO - KHUSUS KEDIRI) -->
     <div id="stepPulang" class="hidden">
       <div class="info">
         <div class="nama" id="dispNama3">-</div>
         <div class="nik" id="dispShift2">-</div>
       </div>
-      <div class="info-box success" id="info3">
-        ✅ Tekan tombol untuk absen PULANG
-        <br><br>📷 Tidak perlu foto untuk absen pulang
+      <div class="video-box">
+        <video id="videoPulang" autoplay playsinline></video>
+        <img id="previewPulang" class="preview hidden">
       </div>
-      <button id="btnPulang" class="btn btn-pulang" onclick="prosesAbsen('pulang')">🏠 ABSEN PULANG</button>
+      <button id="btnCapturePulang" class="btn btn-primary" onclick="ambilFotoPulang()">📷 AMBIL FOTO PULANG</button>
+      <div class="info-box" id="info3"></div>
+      <button id="btnPulang" class="btn btn-pulang" onclick="prosesAbsenPulang()" disabled>🏠 KIRIM ABSEN PULANG</button>
       <button class="btn btn-gray" onclick="reset()">← KEMBALI</button>
     </div>
     
-    <!-- BLOCK SCREEN (untuk blacklist/non-aktif) -->
+    <!-- BLOCK SCREEN -->
     <div id="blockScreen" class="hidden" style="text-align:center;padding:20px;">
       <div style="font-size:80px;" id="blockIcon">🚫</div>
       <h1 style="color:#dc3545;margin:16px 0;font-size:22px;" id="blockTitle">AKSES DITOLAK</h1>
@@ -159,7 +159,8 @@
     // ============ VARIABEL GLOBAL ============
     let pegawai = null;
     let shift = null;
-    let fotoBase64 = null;
+    let fotoMasukBase64 = null;
+    let fotoPulangBase64 = null;
     let videoStream = null;
     
     // ============ AUTO-FILL NIK TERAKHIR ============
@@ -168,7 +169,6 @@
       if (last) document.getElementById('identifier').value = last;
     });
     
-    // Enter untuk submit
     document.getElementById('identifier').addEventListener('keypress', e => {
       if (e.key === 'Enter') cekPegawai();
     });
@@ -176,10 +176,7 @@
     // ============ STEP 1: CEK PEGAWAI ============
     async function cekPegawai() {
       const id = document.getElementById('identifier').value.trim();
-      if (!id) { 
-        alert('Isi NIK atau No HP!'); 
-        return; 
-      }
+      if (!id) { alert('Isi NIK atau No HP!'); return; }
       
       try {
         const r = await kirimKeServer({ 
@@ -188,7 +185,6 @@
         });
         
         if (r.status === 'success') {
-          // ✅ Pegawai ditemukan dan aktif
           pegawai = r.data;
           saveLastNIK(id);
           
@@ -197,13 +193,10 @@
           document.getElementById('dispNama').innerText = pegawai.nama;
           document.getElementById('dispNIK').innerText = 'NIK: ' + pegawai.nik + ' • HP: ' + pegawai.noHp;
         } else if (r.blacklisted) {
-          // 🚫 Blacklist
           showBlock('🚫', 'AKUN DIBLACKLIST', r.message);
         } else if (r.inactive) {
-          // ⏸️ Tidak aktif
           showBlock('⏸️', 'AKUN TIDAK AKTIF', r.message);
         } else if (r.notRegistered) {
-          // 📝 Belum terdaftar
           if (confirm('NIK/HP belum terdaftar.\n\nKlik OK untuk DAFTAR\nKlik CANCEL untuk coba lagi')) {
             location.href = 'register.html';
           }
@@ -222,27 +215,24 @@
       document.querySelector(`[data-shift="${s}"]`).classList.add('active');
       
       try {
-        // Cek apakah ada sesi aktif
         const r = await kirimKeServer({ 
           action: 'check_session', 
           nik: pegawai.nik 
         });
         
         if (r.hasActiveSession) {
-          // Ada sesi aktif → tanya mau pulang
           const jamMasuk = new Date(r.sesi.jamMasuk).toLocaleString('id-ID');
           const konfirm = confirm(
             `📋 SESI AKTIF DITEMUKAN:\n\n` +
             `Shift: ${r.sesi.shift}\n` +
             `Masuk: ${jamMasuk}\n\n` +
-            `✅ OK = ABSEN PULANG\n` +
+            `✅ OK = ABSEN PULANG (dengan foto)\n` +
             `❌ CANCEL = Batal`
           );
           if (konfirm) {
             tampilkanPulang();
           }
         } else {
-          // Tidak ada sesi aktif → tanya masuk atau pulang
           const aksi = confirm(
             `Shift ${s} dipilih.\n\n` +
             `✅ OK = ABSEN MASUK (dengan foto)\n` +
@@ -262,71 +252,64 @@
       }
     }
     
-    // ============ STEP 3A: ABSEN MASUK (DENGAN FOTO) ============
+    // ============ STEP 3A: TAMPILKAN ABSEN MASUK ============
     async function tampilkanMasuk() {
       document.getElementById('step2').classList.add('hidden');
       document.getElementById('stepMasuk').classList.remove('hidden');
       document.getElementById('dispNama2').innerText = pegawai.nama;
       document.getElementById('dispShift').innerText = '🕐 Shift: ' + shift;
       
-      // ✅ SEMUA SHIFT PAKAI FOTO UNTUK ABSEN MASUK
-      document.getElementById('fotoSection').classList.remove('hidden');
-      setInfo(document.getElementById('info2'), 
-        '📷 Ambil foto selfie untuk absen masuk shift ' + shift);
+      setInfo(document.getElementById('info2'), '📷 Ambil foto selfie untuk absen masuk');
       
-      // Nyalakan kamera
       try {
         videoStream = await navigator.mediaDevices.getUserMedia({ 
-          video: { 
-            facingMode: 'user', 
-            width: { ideal: 640 },
-            height: { ideal: 480 }
-          } 
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } 
         });
         document.getElementById('video').srcObject = videoStream;
       } catch (err) {
-        setInfo(document.getElementById('info2'), 
-          '❌ Kamera tidak bisa diakses!\n' + err.message, 'error');
+        setInfo(document.getElementById('info2'), '❌ Kamera tidak bisa diakses!', 'error');
       }
     }
     
-    // ============ STEP 3B: ABSEN PULANG (TANPA FOTO) ============
-    function tampilkanPulang() {
+    // ============ STEP 3B: TAMPILKAN ABSEN PULANG ============
+    async function tampilkanPulang() {
       document.getElementById('step2').classList.add('hidden');
       document.getElementById('stepPulang').classList.remove('hidden');
       document.getElementById('dispNama3').innerText = pegawai.nama;
       document.getElementById('dispShift2').innerText = '🕐 Shift: ' + shift;
-      setInfo(document.getElementById('info3'), 
-        '✅ Tekan tombol untuk absen PULANG\n\n📷 Tidak perlu foto untuk absen pulang', 
-        'success');
+      
+      setInfo(document.getElementById('info3'), '📷 Ambil foto untuk absen pulang');
+      
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'user', width: { ideal: 640 } }
+        });
+        document.getElementById('videoPulang').srcObject = videoStream;
+      } catch (err) {
+        setInfo(document.getElementById('info3'), '❌ Kamera tidak bisa diakses!', 'error');
+      }
     }
     
-    // ============ AMBIL FOTO + WATERMARK ============
-    function ambilFoto() {
+    // ============ AMBIL FOTO MASUK ============
+    function ambilFotoMasuk() {
       const video = document.getElementById('video');
-      if (!video.srcObject) { 
-        alert('Kamera belum siap! Tunggu beberapa detik.'); 
-        return; 
-      }
+      if (!video.srcObject) { alert('Kamera belum siap!'); return; }
       
       setInfo(document.getElementById('info2'), '📍 Mengambil GPS...');
       
-      // Ambil GPS dulu untuk watermark
       navigator.geolocation.getCurrentPosition(pos => {
         const jarak = Math.round(hitungJarak(
           pos.coords.latitude, pos.coords.longitude,
           CONFIG.KANTOR.lat, CONFIG.KANTOR.lng
         ));
         
-        // Capture dengan watermark
         const result = captureFotoDenganMark(video, {
           nama: pegawai.nama,
           jarak: jarak,
           shift: shift
         });
-        fotoBase64 = result.base64;
+        fotoMasukBase64 = result.base64;
         
-        // Tampilkan preview
         const preview = document.getElementById('preview');
         preview.src = result.dataUrl;
         preview.classList.remove('hidden');
@@ -335,22 +318,52 @@
         document.getElementById('btnCapture').innerText = '🔄 AMBIL ULANG';
         document.getElementById('btnMasuk').disabled = false;
         setInfo(document.getElementById('info2'), 
-          `✅ Foto siap!\n📏 Jarak: ${jarak}m dari kantor\nKlik "ABSEN MASUK" untuk kirim`, 
-          'success');
+          `✅ Foto siap!\n📏 Jarak: ${jarak}m\nKlik "ABSEN MASUK"`, 'success');
       }, err => {
-        setInfo(document.getElementById('info2'), 
-          '❌ GPS gagal: ' + err.message + '\n\nCoba di tempat terbuka', 
-          'error');
-      }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+        setInfo(document.getElementById('info2'), '❌ GPS gagal: ' + err.message, 'error');
+      }, { enableHighAccuracy: true, timeout: 15000 });
     }
     
-    // ============ PROSES ABSEN (MASUK/PULANG) ============
-    async function prosesAbsen(tipe) {
-      const infoEl = document.getElementById(tipe === 'masuk' ? 'info2' : 'info3');
-      const btn = document.getElementById(tipe === 'masuk' ? 'btnMasuk' : 'btnPulang');
+    // ============ AMBIL FOTO PULANG ============
+    function ambilFotoPulang() {
+      const video = document.getElementById('videoPulang');
+      if (!video.srcObject) { alert('Kamera belum siap!'); return; }
       
-      // ✅ Validasi: SEMUA SHIFT WAJIB FOTO UNTUK MASUK
-      if (tipe === 'masuk' && !fotoBase64) {
+      setInfo(document.getElementById('info3'), '📍 Mengambil GPS...');
+      
+      navigator.geolocation.getCurrentPosition(pos => {
+        const jarak = Math.round(hitungJarak(
+          pos.coords.latitude, pos.coords.longitude,
+          CONFIG.KANTOR.lat, CONFIG.KANTOR.lng
+        ));
+        
+        const result = captureFotoDenganMark(video, {
+          nama: pegawai.nama + ' (PULANG)',
+          jarak: jarak,
+          shift: shift
+        });
+        fotoPulangBase64 = result.base64;
+        
+        const preview = document.getElementById('previewPulang');
+        preview.src = result.dataUrl;
+        preview.classList.remove('hidden');
+        video.classList.add('hidden');
+        
+        document.getElementById('btnCapturePulang').innerText = '🔄 AMBIL ULANG';
+        document.getElementById('btnPulang').disabled = false;
+        setInfo(document.getElementById('info3'), 
+          `✅ Foto pulang siap!\n📏 Jarak: ${jarak}m\nKlik "KIRIM ABSEN PULANG"`, 'success');
+      }, err => {
+        setInfo(document.getElementById('info3'), '❌ GPS gagal: ' + err.message, 'error');
+      }, { enableHighAccuracy: true, timeout: 15000 });
+    }
+    
+    // ============ PROSES ABSEN MASUK ============
+    async function prosesAbsenMasuk() {
+      const infoEl = document.getElementById('info2');
+      const btn = document.getElementById('btnMasuk');
+      
+      if (!fotoMasukBase64) {
         setInfo(infoEl, '❌ Ambil foto dulu!', 'error'); 
         return;
       }
@@ -360,7 +373,6 @@
       btn.innerText = '⏳ Mengirim...';
       
       try {
-        // Ambil GPS
         setInfo(infoEl, '📍 Mengambil GPS...');
         const lok = await ambilLokasi();
         const jarak = hitungJarak(lok.lat, lok.lng, CONFIG.KANTOR.lat, CONFIG.KANTOR.lng);
@@ -369,50 +381,97 @@
           throw new Error(`Diluar area! Jarak: ${Math.round(jarak)}m (max ${CONFIG.RADIUS_MAX}m)`);
         }
         
-        setInfo(infoEl, 
-          `📏 Jarak: ${Math.round(jarak)}m\n📤 Mengirim data ke server...`);
+        setInfo(infoEl, `📏 Jarak: ${Math.round(jarak)}m\n📤 Mengirim...`);
         
-        // Siapkan payload
         const payload = {
-          action: tipe === 'masuk' ? 'absen_masuk' : 'absen_pulang',
+          action: 'absen_masuk',
           nik: pegawai.nik,
           nama: pegawai.nama,
           shift: shift,
           latitude: lok.lat,
-          longitude: lok.lng
+          longitude: lok.lng,
+          fotoBase64: fotoMasukBase64
         };
         
-        // ✅ SEMUA SHIFT KIRIM FOTO UNTUK MASUK
-        if (tipe === 'masuk') {
-          payload.fotoBase64 = fotoBase64;
-        }
-        
-        // Kirim ke server
         const r = await kirimKeServer(payload);
         
         if (r.status === 'success') {
           setInfo(infoEl, '🎉 ' + r.message, 'success');
-          btn.innerText = '✅ SUDAH ABSEN';
+          btn.innerText = '✅ SUDAH MASUK';
           
-          // Tanya lanjut pulang atau selesai
           setTimeout(() => {
-            if (tipe === 'masuk') {
-              const lanjut = confirm(
-                '🎉 Absen masuk berhasil!\n\n' +
-                '✅ OK = LANJUT ABSEN PULANG sekarang\n' +
-                '❌ CANCEL = Selesai (bisa absen pulang nanti)'
-              );
-              if (lanjut) {
-                stopCamera();
-                tampilkanPulang();
-              } else {
-                reset();
-              }
+            const lanjut = confirm(
+              '🎉 Absen masuk berhasil!\n\n' +
+              '✅ OK = LANJUT ABSEN PULANG sekarang\n' +
+              '❌ CANCEL = Selesai'
+            );
+            if (lanjut) {
+              stopCamera();
+              tampilkanPulang();
             } else {
-              // Absen pulang selesai
-              alert('🎉 Absen pulang berhasil! Terima kasih.');
               reset();
             }
+          }, 1500);
+        } else {
+          if (r.blacklisted) {
+            showBlock('🚫', 'DIBLACKLIST', r.message);
+            return;
+          } else if (r.inactive) {
+            showBlock('⏸️', 'TIDAK AKTIF', r.message);
+            return;
+          }
+          throw new Error(r.message);
+        }
+      } catch (err) {
+        setInfo(infoEl, '❌ ' + err.message, 'error');
+        btn.disabled = false;
+        btn.innerText = origText;
+      }
+    }
+    
+    // ============ PROSES ABSEN PULANG (DENGAN FOTO) ============
+    async function prosesAbsenPulang() {
+      const infoEl = document.getElementById('info3');
+      const btn = document.getElementById('btnPulang');
+      
+      if (!fotoPulangBase64) {
+        setInfo(infoEl, '❌ Ambil foto dulu!', 'error');
+        return;
+      }
+      
+      btn.disabled = true;
+      const origText = btn.innerText;
+      btn.innerText = '⏳ Mengirim...';
+      
+      try {
+        setInfo(infoEl, '📍 Mengambil GPS...');
+        const lok = await ambilLokasi();
+        const jarak = hitungJarak(lok.lat, lok.lng, CONFIG.KANTOR.lat, CONFIG.KANTOR.lng);
+        
+        if (jarak > CONFIG.RADIUS_MAX) {
+          throw new Error(`Diluar area! Jarak: ${Math.round(jarak)}m (max ${CONFIG.RADIUS_MAX}m)`);
+        }
+        
+        setInfo(infoEl, `📏 Jarak: ${Math.round(jarak)}m\n📤 Mengirim...`);
+        
+        const payload = {
+          action: 'absen_pulang',
+          nik: pegawai.nik,
+          nama: pegawai.nama,
+          shift: shift,
+          latitude: lok.lat,
+          longitude: lok.lng,
+          fotoBase64: fotoPulangBase64
+        };
+        
+        const r = await kirimKeServer(payload);
+        
+        if (r.status === 'success') {
+          setInfo(infoEl, '🎉 ' + r.message, 'success');
+          btn.innerText = '✅ SUDAH PULANG';
+          setTimeout(() => {
+            alert('🎉 Absen pulang berhasil! Terima kasih.');
+            reset();
           }, 1500);
         } else {
           if (r.blacklisted) {
@@ -442,26 +501,39 @@
     // ============ RESET KE STEP 1 ============
     function reset() {
       stopCamera();
-      fotoBase64 = null;
+      fotoMasukBase64 = null;
+      fotoPulangBase64 = null;
       shift = null;
       pegawai = null;
       
-      // Hide semua step
       document.getElementById('stepMasuk').classList.add('hidden');
       document.getElementById('stepPulang').classList.add('hidden');
       document.getElementById('step2').classList.add('hidden');
       document.getElementById('blockScreen').classList.add('hidden');
       
-      // Show step 1
       document.getElementById('step1').classList.remove('hidden');
       document.getElementById('identifier').value = getLastNIK();
       document.querySelectorAll('.shift-btn').forEach(b => b.classList.remove('active'));
       
-      // Reset video
-      document.getElementById('video').classList.remove('hidden');
-      document.getElementById('preview').classList.add('hidden');
-      document.getElementById('btnCapture').innerText = '📷 AMBIL FOTO';
-      document.getElementById('btnMasuk').disabled = true;
+      // Reset video masuk
+      const video = document.getElementById('video');
+      const preview = document.getElementById('preview');
+      if (video) video.classList.remove('hidden');
+      if (preview) preview.classList.add('hidden');
+      const btnCapture = document.getElementById('btnCapture');
+      if (btnCapture) btnCapture.innerText = '📷 AMBIL FOTO';
+      const btnMasuk = document.getElementById('btnMasuk');
+      if (btnMasuk) btnMasuk.disabled = true;
+      
+      // Reset video pulang
+      const videoP = document.getElementById('videoPulang');
+      const previewP = document.getElementById('previewPulang');
+      if (videoP) videoP.classList.remove('hidden');
+      if (previewP) previewP.classList.add('hidden');
+      const btnCaptureP = document.getElementById('btnCapturePulang');
+      if (btnCaptureP) btnCaptureP.innerText = '📷 AMBIL FOTO PULANG';
+      const btnPulang = document.getElementById('btnPulang');
+      if (btnPulang) btnPulang.disabled = true;
     }
     
     // ============ TAMPILKAN BLOCK SCREEN ============
