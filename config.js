@@ -1,5 +1,5 @@
 const CONFIG = {
-  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzB3Banzr5yHCa3GOwbX_Xbpf7tKVICsftMkdpN--oZawMsRMDtCK00UdOYfa9JOxnB/exec',
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/library/d/1npTC3VAzHkl14Mz2l3xNe86dCNxrneyyDSQ9yZFeMjXhpwrU_A844hiB/2',
   SECRET_TOKEN: 'bimantaramitrapersadakediri',
  KANTOR: { 
   lat: -7.78741542408522,
